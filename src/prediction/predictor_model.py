@@ -2,11 +2,12 @@ import os
 import warnings
 import joblib
 import pandas as pd
-from gluonts.ext.rotbaum import TreeEstimator
+from gluonts.ext.rotbaum import TreePredictor
 from schema.data_schema import ForecastingSchema
 from sklearn.exceptions import NotFittedError
 from gluonts.dataset.common import ListDataset
 from utils import set_seeds
+from pathlib import Path
 
 warnings.filterwarnings("ignore")
 
@@ -85,7 +86,7 @@ class Forecaster:
             self.context_length = self.data_schema.forecast_length * lags_forecast_ratio
 
         use_past_feat_dynamic_real = use_exogenous and has_past_covariates
-        self.model = TreeEstimator(
+        self.model = TreePredictor(
             context_length=self.context_length,
             prediction_length=data_schema.forecast_length,
             freq=self.freq,
@@ -373,6 +374,8 @@ class Forecaster:
         """
         if not self._is_trained:
             raise NotFittedError("Model is not fitted yet.")
+        self.model.serialize(Path(model_dir_path))
+        self.model = None
         joblib.dump(self, os.path.join(model_dir_path, PREDICTOR_FILE_NAME))
 
     @classmethod
@@ -384,8 +387,9 @@ class Forecaster:
         Returns:
             Forecaster: A new instance of the loaded Forecaster.
         """
-        model = joblib.load(os.path.join(model_dir_path, PREDICTOR_FILE_NAME))
-        return model
+        predictor = joblib.load(os.path.join(model_dir_path, PREDICTOR_FILE_NAME))
+        predictor.model = TreePredictor.deserialize(Path(model_dir_path))
+        return predictor
 
     def __str__(self):
         # sort params alphabetically for unit test to run successfully

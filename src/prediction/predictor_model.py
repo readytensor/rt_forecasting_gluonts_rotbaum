@@ -84,6 +84,7 @@ class Forecaster:
         if lags_forecast_ratio:
             self.context_length = self.data_schema.forecast_length * lags_forecast_ratio
 
+        use_past_feat_dynamic_real = use_exogenous and has_past_covariates
         self.model = TreeEstimator(
             context_length=self.context_length,
             prediction_length=data_schema.forecast_length,
@@ -93,7 +94,7 @@ class Forecaster:
             max_n_datapts=max_n_datapts,
             min_bin_size=min_bin_size,
             seed=random_state,
-            use_past_feat_dynamic_real=self.use_exogenous,
+            use_past_feat_dynamic_real=use_past_feat_dynamic_real,
         )
 
     def prepare_time_column(

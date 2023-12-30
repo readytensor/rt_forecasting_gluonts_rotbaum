@@ -1,6 +1,6 @@
-# Rotbaum Forecaster in GluonTS
+# Temporal Fusion Transformer Forecaster in GluonTS
 
-Rotbaum Forecaster for the Forecasting problem category as per Ready Tensor specifications.
+Temporal Fusion Transformer Forecaster for the Forecasting problem category as per Ready Tensor specifications.
 
 ## Project Description
 
@@ -16,13 +16,9 @@ The following are the requirements for using your data with this model:
 
 ---
 
-### Note
-
-#### This model currently only supports past covariates.
-
 Here are the highlights of this implementation: <br/>
 
-- A **Rotbaum Forecaster** algorithm built using **GluonTS**
+- A **TFT Forecaster** algorithm built using **GluonTS**
   Additionally, the implementation contains the following features:
 - **Data Validation**: Pydantic data validation is used for the schema, training and test files, as well as the inference request data.
 - **Error handling and logging**: Python's logging module is used for logging and key functions include exception handling.

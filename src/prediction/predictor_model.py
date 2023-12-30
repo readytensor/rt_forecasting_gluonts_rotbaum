@@ -2,12 +2,17 @@ import os
 import warnings
 import joblib
 import pandas as pd
-from gluonts.ext.rotbaum import TreePredictor
+import torch
+from typing import Optional, List
+from gluonts.torch.model.tft import TemporalFusionTransformerEstimator
 from schema.data_schema import ForecastingSchema
 from sklearn.exceptions import NotFittedError
 from gluonts.dataset.common import ListDataset
 from utils import set_seeds
-from pathlib import Path
+from lightning.pytorch.callbacks import EarlyStopping
+from pytorch_lightning import seed_everything
+from sklearn.preprocessing import MinMaxScaler
+
 
 warnings.filterwarnings("ignore")
 
@@ -32,10 +37,20 @@ class Forecaster:
         history_forecast_ratio: int = None,
         lags_forecast_ratio: int = None,
         context_length: int = None,
-        n_ignore_last: int = 0,
-        lead_time: int = 0,
-        max_n_datapts: int = 1000000,
-        min_bin_size: int = 100,
+        quantiles: Optional[List[float]] = None,
+        num_heads: int = 4,
+        hidden_dim: int = 32,
+        variable_dim: int = 32,
+        lr: float = 1e-3,
+        weight_decay: float = 1e-8,
+        dropout_rate: float = 0.1,
+        patience: int = 10,
+        batch_size: int = 32,
+        num_batches_per_epoch: int = 50,
+        early_stopping: bool = True,
+        early_stopping_patience: int = 20,
+        min_delta: float = 0.01,
+        trainer_kwargs: dict = {},
         use_exogenous: bool = True,
         random_state: int = 0,
     ):
@@ -57,6 +72,40 @@ class Forecaster:
 
             context_length (int): Number of time steps prior to prediction time that the model takes as inputs.
 
+            quantiles (Optional[List[float]]):
+                List of quantiles that the model will learn to predict.
+                Defaults to [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+
+            num_heads (int): Number of attention heads in self-attention layer in the decoder.
+
+            hidden_dim (int): Size of the LSTM & transformer hidden states.
+
+            variable_dim (int): Size of the feature embeddings.
+
+            dynamic_dims (Optional[List[float]]) Sizes of the real-valued dynamic features that are known in the future.
+
+            past_dynamic_dims (Optional[List[float]]) Sizes of the real-valued dynamic features that are only known in the past.
+
+            lr (float) Learning rate (default: 1e-3).
+
+            weight_decay (float) Weight decay (default: 1e-8).
+
+            dropout_rate (float) Dropout regularization parameter (default: 0.1).
+
+            patience (int) Patience parameter for learning rate scheduler.
+
+            batch_size (int) The size of the batches to be used for training (default: 32).
+
+            num_batches_per_epoch (int): Number of batches to be processed in each training epoch (default: 50).
+
+            early_stopping (bool): If true, use early stopping.
+
+            early_stopping_patience (int): Patience used by early stopper.
+
+            min_delta (float): Minimum imporovement required by early stopper.
+
+            trainer_kwargs (dict) Additional arguments to provide to pl.Trainer for construction.
+
             use_exogenous (bool): If true, uses covariates in training.
 
             random_state (int): Sets the underlying random seed at model initialization time.
@@ -64,6 +113,7 @@ class Forecaster:
 
         self.data_schema = data_schema
         self.context_length = context_length
+        self.early_stopping = early_stopping
         self.random_state = random_state
 
         has_future_covariates = len(data_schema.future_covariates) > 0
@@ -85,17 +135,51 @@ class Forecaster:
         if lags_forecast_ratio:
             self.context_length = self.data_schema.forecast_length * lags_forecast_ratio
 
-        use_past_feat_dynamic_real = use_exogenous and has_past_covariates
-        self.model = TreePredictor(
+        early_stopping = EarlyStopping(
+            monitor="train_loss",
+            patience=early_stopping_patience,
+            min_delta=min_delta,
+            verbose=True,
+            mode="min",
+        )
+
+        if self.early_stopping:
+            trainer_kwargs["callbacks"] = [early_stopping]
+
+        if torch.cuda.is_available():
+            print("GPU is available")
+        else:
+            print("GPU is not available")
+            if trainer_kwargs.get("accelerator") == "gpu":
+                trainer_kwargs.pop("accelerator")
+
+        dynamic_dims = None
+        past_dynamic_dims = None
+
+        if self.use_exogenous:
+            if has_past_covariates:
+                past_dynamic_dims = [1 for _ in range(len(data_schema.past_covariates))]
+
+            if has_future_covariates:
+                dynamic_dims = [1 for _ in range(len(data_schema.future_covariates))]
+
+        self.model = TemporalFusionTransformerEstimator(
             context_length=self.context_length,
             prediction_length=data_schema.forecast_length,
+            quantiles=quantiles,
+            num_heads=num_heads,
+            hidden_dim=hidden_dim,
+            variable_dim=variable_dim,
+            lr=lr,
+            weight_decay=weight_decay,
+            dropout_rate=dropout_rate,
+            patience=patience,
+            batch_size=batch_size,
+            num_batches_per_epoch=num_batches_per_epoch,
+            trainer_kwargs=trainer_kwargs,
             freq=self.freq,
-            n_ignore_last=n_ignore_last,
-            lead_time=lead_time,
-            max_n_datapts=max_n_datapts,
-            min_bin_size=min_bin_size,
-            seed=random_state,
-            use_past_feat_dynamic_real=use_past_feat_dynamic_real,
+            dynamic_dims=dynamic_dims,
+            past_dynamic_dims=past_dynamic_dims,
         )
 
     def prepare_time_column(
@@ -172,6 +256,25 @@ class Forecaster:
             groups_by_ids.get_group(id_).drop(columns=data_schema.id_col)
             for id_ in all_ids
         ]
+
+        self.scalers = {}
+
+        for id, series in zip(all_ids, all_series):
+            target_scaler = MinMaxScaler()
+            covariates_scaler = MinMaxScaler()
+            covariates_columns = series.drop(
+                columns=[data_schema.time_col, data_schema.target]
+                + data_schema.future_covariates
+            ).columns
+            series[data_schema.target] = target_scaler.fit_transform(
+                series[data_schema.target].values.reshape(-1, 1)
+            )
+            if len(covariates_columns) > 0:
+                series[covariates_columns] = covariates_scaler.fit_transform(
+                    series[covariates_columns]
+                )
+
+            self.scalers[id] = target_scaler
 
         # Enforces the history_forecast_ratio parameter
         if self.history_length:
@@ -333,6 +436,7 @@ class Forecaster:
             history (pandas.DataFrame): The features of the training data.
         """
         set_seeds(self.random_state)
+        seed_everything(self.random_state)
 
         history = self.prepare_training_data(history=history)
         self.predictor = self.model.train(history)
@@ -352,6 +456,7 @@ class Forecaster:
         if not self._is_trained:
             raise NotFittedError("Model is not fitted yet.")
         set_seeds(self.random_state)
+        seed_everything(self.random_state)
 
         test_dataset = self.prepare_test_data(test_data=test_data)
         predictions = self.predictor.predict(test_dataset)
@@ -361,9 +466,19 @@ class Forecaster:
         for forecast in predictions:
             median = list(forecast.median)
             values += median
-
         predictions_df[prediction_col_name] = values
 
+        transformed_values = []
+        for id in predictions_df[self.data_schema.id_col].unique():
+            values = predictions_df[predictions_df[self.data_schema.id_col] == id][
+                prediction_col_name
+            ].values.reshape(-1, 1)
+
+            transformed_values += (
+                self.scalers[id].inverse_transform(values).flatten().tolist()
+            )
+
+        predictions_df[prediction_col_name] = transformed_values
         return predictions_df
 
     def save(self, model_dir_path: str) -> None:
@@ -374,8 +489,6 @@ class Forecaster:
         """
         if not self._is_trained:
             raise NotFittedError("Model is not fitted yet.")
-        self.model.serialize(Path(model_dir_path))
-        self.model = None
         joblib.dump(self, os.path.join(model_dir_path, PREDICTOR_FILE_NAME))
 
     @classmethod
@@ -387,9 +500,8 @@ class Forecaster:
         Returns:
             Forecaster: A new instance of the loaded Forecaster.
         """
-        predictor = joblib.load(os.path.join(model_dir_path, PREDICTOR_FILE_NAME))
-        predictor.model = TreePredictor.deserialize(Path(model_dir_path))
-        return predictor
+        model = joblib.load(os.path.join(model_dir_path, PREDICTOR_FILE_NAME))
+        return model
 
     def __str__(self):
         # sort params alphabetically for unit test to run successfully

@@ -21,13 +21,13 @@ PREDICTOR_FILE_NAME = "predictor.joblib"
 
 
 class Forecaster:
-    """A wrapper class for the Rotbaum Forecaster.
+    """A wrapper class for the TFT Forecaster.
 
     This class provides a consistent interface that can be used with other
     Forecaster models.
     """
 
-    model_name = "Rotbaum Forecaster"
+    model_name = "TFT Forecaster"
     made_up_frequency = "S"  # by seconds
     made_up_start_dt = "2000-01-01 00:00:00"
 
@@ -54,7 +54,7 @@ class Forecaster:
         use_exogenous: bool = True,
         random_state: int = 0,
     ):
-        """Construct a new Rotbaum Forecaster
+        """Construct a new TFT Forecaster
 
         Args:
 
@@ -429,7 +429,7 @@ class Forecaster:
         history: pd.DataFrame,
     ) -> None:
         """Fit the Forecaster to the training data.
-        A separate Rotbaum model is fit to each series that is contained
+        A separate TFT model is fit to each series that is contained
         in the data.
 
         Args:

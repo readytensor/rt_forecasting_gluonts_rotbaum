@@ -118,8 +118,9 @@ class Forecaster:
 
         has_future_covariates = len(data_schema.future_covariates) > 0
         has_past_covariates = len(data_schema.past_covariates) > 0
+        has_static_covariates = len(data_schema.static_covariates) > 0
         self.use_exogenous = use_exogenous and (
-            has_future_covariates or has_past_covariates
+            has_future_covariates or has_past_covariates or has_static_covariates
         )
 
         self._is_trained = False
@@ -155,6 +156,7 @@ class Forecaster:
 
         dynamic_dims = None
         past_dynamic_dims = None
+        static_dims = None
 
         if self.use_exogenous:
             if has_past_covariates:
@@ -162,6 +164,9 @@ class Forecaster:
 
             if has_future_covariates:
                 dynamic_dims = [1 for _ in range(len(data_schema.future_covariates))]
+
+            if has_static_covariates:
+                static_dims = [1 for _ in range(len(data_schema.static_covariates))]
 
         self.model = TemporalFusionTransformerEstimator(
             context_length=self.context_length,
@@ -180,6 +185,7 @@ class Forecaster:
             freq=self.freq,
             dynamic_dims=dynamic_dims,
             past_dynamic_dims=past_dynamic_dims,
+            # static_dims=static_dims,
         )
 
     def prepare_time_column(
@@ -286,17 +292,21 @@ class Forecaster:
 
         fut_cov_names = []
         past_cov_names = []
+        static_cov_names = []
 
         if self.use_exogenous:
             fut_cov_names = data_schema.future_covariates
             past_cov_names = data_schema.past_covariates
+            static_cov_names = data_schema.static_covariates
 
         # Put future covariates into separate list
         all_covariates = []
+        static_covariates = []
 
         for series in all_series:
             series_past_covariates = []
             series_future_covariates = []
+            series_static_covariates = []
 
             for covariate in fut_cov_names:
                 series_future_covariates.append(series[covariate])
@@ -304,7 +314,11 @@ class Forecaster:
             for covariate in past_cov_names:
                 series_past_covariates.append(series[covariate])
 
+            for covariate in static_cov_names:
+                series_static_covariates.append(series[covariate].iloc[0])
+
             all_covariates.append((series_future_covariates, series_past_covariates))
+            static_covariates.append(series_static_covariates)
 
         # If covariates are available for training, create a dataset with covariate features,
         # otherwise a dataset with only target series will be created.
@@ -325,11 +339,16 @@ class Forecaster:
             for item, cov_series in zip(list_dataset, all_covariates):
                 item["past_feat_dynamic_real"] = cov_series[1]
 
+        if self.use_exogenous and static_cov_names:
+            for item, cov_series in zip(list_dataset, static_covariates):
+                item["feat_static_real"] = cov_series
+
         gluonts_dataset = ListDataset(list_dataset, freq=self.freq)
 
         self.training_all_series = all_series
         self.training_covariates = all_covariates
         self.all_ids = all_ids
+        self.static_covariates = static_covariates
 
         return gluonts_dataset
 
@@ -391,6 +410,10 @@ class Forecaster:
         if data_schema.past_covariates and self.use_exogenous:
             for item, series_covariates in zip(list_dataset, self.training_covariates):
                 item["past_feat_dynamic_real"] = series_covariates[1]
+
+        if self.use_exogenous and data_schema.static_covariates:
+            for item, cov_series in zip(list_dataset, self.static_covariates):
+                item["feat_static_real"] = cov_series
 
         gluonts_dataset = ListDataset(list_dataset, freq=self.freq)
 

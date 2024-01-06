@@ -185,7 +185,7 @@ class Forecaster:
             freq=self.freq,
             dynamic_dims=dynamic_dims,
             past_dynamic_dims=past_dynamic_dims,
-            # static_dims=static_dims,
+            static_dims=static_dims,
         )
 
     def prepare_time_column(

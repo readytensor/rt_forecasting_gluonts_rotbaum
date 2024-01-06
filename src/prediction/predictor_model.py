@@ -268,16 +268,17 @@ class Forecaster:
         for id, series in zip(all_ids, all_series):
             target_scaler = MinMaxScaler()
             covariates_scaler = MinMaxScaler()
-            covariates_columns = series.drop(
+            past_covariates_columns = series.drop(
                 columns=[data_schema.time_col, data_schema.target]
+                + data_schema.static_covariates
                 + data_schema.future_covariates
             ).columns
             series[data_schema.target] = target_scaler.fit_transform(
                 series[data_schema.target].values.reshape(-1, 1)
             )
-            if len(covariates_columns) > 0:
-                series[covariates_columns] = covariates_scaler.fit_transform(
-                    series[covariates_columns]
+            if len(past_covariates_columns) > 0:
+                series[past_covariates_columns] = covariates_scaler.fit_transform(
+                    series[past_covariates_columns]
                 )
 
             self.scalers[id] = target_scaler

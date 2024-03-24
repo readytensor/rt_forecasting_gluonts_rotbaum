@@ -46,7 +46,7 @@ The following is the directory structure of the project:
   - **`config/`**: for configuration files for data preprocessing, model hyperparameters, paths, etc.
   - **`data_models/`**: for data models for input validation including the schema, training and test files. It also contains the data model for the batch prediction results.
   - **`schema/`**: for schema handler script. This script contains the class that provides helper getters/methods for the data schema.
-  - **`prediction/`**: Scripts for the forecaster model implemented using **Darts** library.
+  - **`prediction/`**: Scripts for the forecaster model implemented using **GluonTS** library.
   - **`logger.py`**: This script contains the logger configuration using **logging** module.
   - **`train.py`**: This script is used to train the model. It loads the data, preprocesses it, trains the model, and saves the artifacts in the path `./model_inputs_outputs/model/artifacts/`.
   - **`predict.py`**: This script is used to run batch predictions using the trained model. It loads the artifacts and creates and saves the predictions in a file called `predictions.csv` in the path `./model_inputs_outputs/outputs/predictions/`.

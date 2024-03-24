@@ -1,26 +1,25 @@
-# Base image with NVIDIA CUDA support
-FROM nvidia/cuda:12.2.0-runtime-ubuntu20.04
+# Use a specific version of nvidia/cuda base image
+FROM nvidia/cuda:12.2.0-runtime-ubuntu20.04 as builder
 
-# Install Python, pip, and necessary packages in a single RUN command to reduce layers
+# Install dependencies, python, pip, and add symbolic link to python3 in a single RUN to reduce layers
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     dos2unix \
     python3.9 \
     python3-pip \
-    && ln -s /usr/bin/python3.9 /usr/bin/python \
-    && rm -rf /var/lib/apt/lists/* \
-    && pip3 install --upgrade pip
+    && ln -s /usr/bin/python3 /usr/bin/python \
+    && rm -rf /var/lib/apt/lists/* 
 
-# Copy the requirements file and install Python dependencies
+# Upgrade pip and install requirements in a single layer
 COPY ./requirements.txt .
-RUN pip install -r requirements.txt
+RUN pip3 --no-cache-dir install --upgrade pip && \
+    pip3 --no-cache-dir install -r requirements.txt
 
-# Copy source code and scripts into the container
+# Copy source code and entry point script
 COPY src /opt/src
-COPY entry_point.sh fix_line_endings.sh /opt/
-RUN chmod +x /opt/entry_point.sh /opt/fix_line_endings.sh \
-    && /opt/fix_line_endings.sh "/opt/src" \
-    && /opt/fix_line_endings.sh "/opt/entry_point.sh"
+COPY ./entry_point.sh /opt/
+RUN chmod å+x /opt/entry_point.sh \
+    && mkdir -p /opt/src/lightning_logs && chmod -R 777 /opt/src/lightning_logs
 
 # Set working directory
 WORKDIR /opt/src
@@ -31,11 +30,6 @@ ENV MPLCONFIGDIR=/tmp/matplotlib \
     PYTHONDONTWRITEBYTECODE=TRUE \
     PATH="/opt/app:${PATH}"
 
-# Prepare directory for lightning logs with broad permissions
-RUN mkdir -p /opt/src/lightning_logs && chmod -R 777 /opt/src/lightning_logs
-
-# Run as a non-root user for better security
+# Set non-root user and entrypoint
 USER 1000
-
-# Set the container's entry point
 ENTRYPOINT ["/opt/entry_point.sh"]

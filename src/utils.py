@@ -214,49 +214,50 @@ def get_peak_memory_usage():
 
 
 class MemoryMonitor:
+    initial_memory = None
     peak_memory = 0  # Class variable to store peak memory usage
 
     def __init__(self, interval=20.0, logger=print):
-        self.interval = interval  # Time between executions in seconds
-        self.timer = None  # Placeholder for the timer object
-        self.logger = logger
-        self.lock = threading.Lock()  # Lock for thread-safe updates to class variables
+        self.interval = interval
+        self.logger = logger or print
+        self.running = False
+        self.thread = threading.Thread(target=self.monitor_loop)
 
     def monitor_memory(self):
         process = psutil.Process(os.getpid())
-        children = process.children(recursive=True)
         total_memory = process.memory_info().rss
 
-        for child in children:
-            total_memory += child.memory_info().rss
+        # Check if the current memory usage is a new peak and update accordingly
+        MemoryMonitor.peak_memory = max(MemoryMonitor.peak_memory, total_memory)
+        if MemoryMonitor.initial_memory is None:
+            MemoryMonitor.initial_memory = MemoryMonitor.peak_memory
 
-        with self.lock:
-            # Check if the current memory usage is a new peak and update accordingly
-            MemoryMonitor.peak_memory = max(MemoryMonitor.peak_memory, total_memory)
+    def monitor_loop(self):
+        """Runs the monitoring process in a loop."""
+        while self.running:
+            self.monitor_memory()
+            time.sleep(self.interval)
 
     def _schedule_monitor(self):
-        """Internal method to execute monitor_memory and schedule the next execution"""
+        """Internal method to schedule the next execution"""
         self.monitor_memory()
-        self.schedule_next()
-
-    def schedule_next(self):
-        """Schedules the next execution of the monitor task"""
-        if not self.timer or not self.timer.is_alive():
+        # Only reschedule if the timer has not been canceled
+        if self.timer is not None:
             self.timer = threading.Timer(self.interval, self._schedule_monitor)
             self.timer.start()
 
     def start(self):
-        """Starts the periodic monitoring"""
-        if not self.timer or not self.timer.is_alive():
-            threading.Thread(target=self._schedule_monitor).start()
+        """Starts the memory monitoring."""
+        if not self.running:
+            self.running = True
+            self.thread.start()
 
     def stop(self):
         """Stops the periodic monitoring"""
-        if self.timer and self.timer.is_alive():
-            self.timer.cancel()
-            self.timer = None
+        self.running = False
+        self.thread.join()  # Wait for the monitoring thread to finish
         self.logger.info(
-            f"CPU Memory allocated (peak): {MemoryMonitor.peak_memory / (1024**2):.2f} MB"
+            f"CPU Memory allocated (peak): {(MemoryMonitor.peak_memory - MemoryMonitor.initial_memory)/ (1024**2):.2f} MB"
         )
 
     @classmethod

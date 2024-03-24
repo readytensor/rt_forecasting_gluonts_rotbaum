@@ -18,7 +18,7 @@ RUN pip3 --no-cache-dir install --upgrade pip && \
 # Copy source code and entry point script
 COPY src /opt/src
 COPY ./entry_point.sh /opt/
-RUN chmod å+x /opt/entry_point.sh \
+RUN chmod +x /opt/entry_point.sh \
     && mkdir -p /opt/src/lightning_logs && chmod -R 777 /opt/src/lightning_logs
 
 # Set working directory

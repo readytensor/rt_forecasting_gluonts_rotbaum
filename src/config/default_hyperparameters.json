@@ -1,14 +1,17 @@
 {
-  "history_forecast_ratio": 10,
+  "history_forecast_ratio": 15,
   "lags_forecast_ratio": 3,
-  "num_heads": 2,
+  "num_heads": 4,
   "hidden_dim": 32,
   "num_batches_per_epoch": 20,
   "dropout_rate": 0.0,
   "early_stopping": true,
   "early_stopping_patience": 20,
   "min_delta": 0.0005,
-  "trainer_kwargs": {"max_epochs": 400, "accelerator": "gpu"},
+  "trainer_kwargs": {
+    "max_epochs": 400,
+    "accelerator": "gpu"
+  },
   "use_exogenous": true,
   "random_state": 42
 }

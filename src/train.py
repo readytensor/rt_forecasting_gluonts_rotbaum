@@ -43,7 +43,7 @@ def run_training(
     """
 
     try:
-        with ResourceTracker(logger=logger, monitoring_interval=0.1):
+        with ResourceTracker(logger=logger, monitoring_interval=0.1, is_train=True):
             logger.info("Starting training...")
             # load and save schema
             logger.info("Loading and saving schema...")
@@ -94,7 +94,6 @@ def run_training(
         log_error(message=err_msg, error=exc, error_fpath=paths.TRAIN_ERROR_FILE_PATH)
         # re-raise the error
         raise Exception(f"{err_msg} Error: {str(exc)}") from exc
-
 
 
 if __name__ == "__main__":
